@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Keyboard Effects Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ========== RESET & BASE ========== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary:   #0a0a12;
+      --bg-card:      rgba(255, 255, 255, 0.04);
+      --bg-card-hover:rgba(255, 255, 255, 0.08);
+      --bg-active:    rgba(120, 200, 255, 0.10);
+      --border:       rgba(255, 255, 255, 0.06);
+      --border-active:rgba(120, 200, 255, 0.35);
+      --text-primary: #e8eaf0;
+      --text-secondary:#8890a4;
+      --text-muted:   #555d74;
+      --accent:       #78c8ff;
+      --accent-glow:  rgba(120, 200, 255, 0.45);
+      --danger:       #ff6b8a;
+      --success:      #6bffa8;
+      --radius:       14px;
+      --radius-sm:    10px;
+    }
+
+    html { font-size: 16px; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background glow */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -40%; left: -20%;
+      width: 140%; height: 140%;
+      background:
+        radial-gradient(ellipse 600px 400px at 30% 20%, rgba(120,200,255,0.06), transparent),
+        radial-gradient(ellipse 500px 500px at 75% 70%, rgba(160,120,255,0.04), transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ========== LAYOUT ========== */
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+
+    /* ========== HEADER ========== */
+    .header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #fff 0%, var(--accent) 60%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.4rem;
+    }
+    .header .subtitle {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* ========== STATUS BADGE ========== */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.8rem;
+      font-size: 0.72rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      border-radius: 999px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .badge.active .dot {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ========== KEYBOARD VISUALIZATION ========== */
+    .keyboard-viz {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .keyboard-viz::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center, var(--accent-glow), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      pointer-events: none;
+    }
+    .keyboard-viz.lit::before { opacity: 0.25; }
+
+    .kb-rows { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+    .kb-row  { display: flex; gap: 4px; justify-content: center; }
+    .kb-key  {
+      width: 34px; height: 30px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
+    }
+    .kb-key.wide   { width: 52px; }
+    .kb-key.wider  { width: 74px; }
+    .kb-key.space  { width: 180px; }
+    .kb-key.lit {
+      background: rgba(120,200,255,0.18);
+      border-color: rgba(120,200,255,0.30);
+      box-shadow: 0 0 12px rgba(120,200,255,0.15), inset 0 0 6px rgba(120,200,255,0.08);
+    }
+
+    /* ========== SECTION HEADERS ========== */
+    .section-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.8rem;
+    }
+
+    /* ========== EFFECTS GRID ========== */
+    .effects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 0.6rem;
+      margin-bottom: 2rem;
+    }
+    .effect-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 1rem 0.9rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+      user-select: none;
+    }
+    .effect-card:hover {
+      background: var(--bg-card-hover);
+      border-color: rgba(255,255,255,0.12);
+      transform: translateY(-2px);
+    }
+    .effect-card.selected {
+      background: var(--bg-active);
+      border-color: var(--border-active);
+      box-shadow: 0 0 20px rgba(120,200,255,0.08);
+    }
+    .effect-card.selected::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+    .effect-icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.45rem;
+      display: block;
+    }
+    .effect-name {
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 0.2rem;
+      color: var(--text-primary);
+    }
+    .effect-desc {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .effect-card.selected .effect-name { color: var(--accent); }
+
+    /* ========== CONTROLS ========== */
+    .controls {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Speed slider */
+    .speed-control {
+      margin-bottom: 1.5rem;
+    }
+    .speed-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.6rem;
+    }
+    .speed-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .slider-track {
+      position: relative;
+      width: 100%;
+      height: 32px;
+      display: flex;
+      align-items: center;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.15));
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 10px var(--accent-glow);
+      transition: transform 0.15s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 18px; height: 18px;
+      border: none;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+    .speed-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+    }
+
+    /* Buttons */
+    .btn-row {
+      display: flex;
+      gap: 0.6rem;
+    }
+    .btn {
+      flex: 1;
+      padding: 0.85rem 1.2rem;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-start {
+      background: linear-gradient(135deg, var(--accent), #5eadff);
+      color: #0a0a12;
+    }
+    .btn-start:hover {
+      box-shadow: 0 0 24px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+    .btn-start:active { transform: translateY(0); }
+    .btn-start.running {
+      background: linear-gradient(135deg, var(--danger), #ff4d6d);
+    }
+    .btn-start.running:hover {
+      box-shadow: 0 0 24px rgba(255,107,138,0.4);
+    }
+
+    .btn-toggle {
+      background: rgba(255,255,255,0.06);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      flex: 0 0 auto;
+      padding: 0.85rem 1rem;
+    }
+    .btn-toggle:hover {
+      background: rgba(255,255,255,0.10);
+      color: var(--text-primary);
+    }
+
+    .btn-redetect {
+      background: rgba(255,255,255,0.04);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      flex: 0 0 auto;
+      padding: 0.85rem 1rem;
+      font-size: 0.72rem;
+    }
+    .btn-redetect:hover {
+      background: rgba(255,255,255,0.08);
+      color: var(--text-secondary);
+    }
+
+    /* ========== INFO FOOTER ========== */
+    .info-footer {
+      text-align: center;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .info-footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    /* ========== TOAST ========== */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: rgba(20,20,30,0.92);
+      border: 1px solid var(--border-active);
+      backdrop-filter: blur(12px);
+      padding: 0.7rem 1.4rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent);
+      pointer-events: none;
+      opacity: 0;
+      transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 100;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ========== RESPONSIVE ========== */
+    @media (max-width: 600px) {
+      .app { padding: 1.2rem 1rem 3rem; }
+      .header h1 { font-size: 1.5rem; }
+      .effects-grid { grid-template-columns: repeat(2, 1fr); }
+      .kb-key { width: 22px; height: 22px; }
+      .kb-key.wide { width: 36px; }
+      .kb-key.wider { width: 50px; }
+      .kb-key.space { width: 110px; }
+    }
+
+    /* ========== ANIMATIONS ========== */
+    @keyframes fade-in-up {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .animate-in {
+      animation: fade-in-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+    .delay-1 { animation-delay: 0.05s; }
+    .delay-2 { animation-delay: 0.1s; }
+    .delay-3 { animation-delay: 0.15s; }
+    .delay-4 { animation-delay: 0.2s; }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- HEADER -->
+    <header class="header animate-in">
+      <h1>⌨️ Keyboard Effects Lab</h1>
+      <p class="subtitle">Control your keyboard backlight with style</p>
+    </header>
+
+    <!-- STATUS -->
+    <div class="status-bar animate-in delay-1">
+      <span class="badge" id="methodBadge">
+        <span class="dot"></span>
+        <span id="methodText">Detecting…</span>
+      </span>
+      <span class="badge" id="statusBadge">
+        <span class="dot"></span>
+        <span id="statusText">Idle</span>
+      </span>
+    </div>
+
+    <!-- KEYBOARD VIZ -->
+    <div class="keyboard-viz animate-in delay-2" id="keyboardViz">
+      <div class="kb-rows" id="kbRows"></div>
+    </div>
+
+    <!-- EFFECTS -->
+    <div class="animate-in delay-3">
+      <div class="section-label">Effects</div>
+      <div class="effects-grid" id="effectsGrid"></div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="controls animate-in delay-4">
+      <div class="speed-control">
+        <div class="speed-header">
+          <span class="section-label" style="margin:0">Speed</span>
+          <span class="speed-value" id="speedValue">1.0×</span>
+        </div>
+        <div class="slider-track">
+          <input type="range" id="speedSlider" min="0.2" max="4" step="0.1" value="1" />
+        </div>
+        <div class="speed-labels">
+          <span>Slow</span><span>Normal</span><span>Fast</span><span>Insane</span>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-start" id="startBtn" onclick="toggleEffect()">
+          ▶&ensp;Start Effect
+        </button>
+        <button class="btn btn-toggle" id="toggleBtn" onclick="toggleLight()" title="Toggle light on/off">
+          💡
+        </button>
+        <button class="btn btn-redetect" onclick="redetect()" title="Re-detect control method">
+          🔄
+        </button>
+      </div>
+    </div>
+
+    <!-- ADMIN WARNING -->
+    <div class="admin-warning animate-in delay-4" id="adminWarning" style="display:none">
+      <div style="background:rgba(255,107,138,0.08);border:1px solid rgba(255,107,138,0.25);border-radius:10px;padding:0.9rem 1.2rem;margin-bottom:1rem;font-size:0.78rem;color:#ff8fa3;text-align:center;">
+        <strong>Not running as Admin</strong> — keyboard backlight control requires Administrator privileges.<br>
+        Close this, then right-click <code>app.py</code> → <em>Run as administrator</em>.
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="info-footer animate-in delay-4" id="footerInfo">
+      Lenovo 83GS &nbsp;·&nbsp; LENOVO_LIGHTING_METHOD
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    /* ========== STATE ========== */
+    let selectedEffect = null;
+    let isRunning = false;
+    let lightOn = true;
+    let vizInterval = null;
+
+    /* ========== KEYBOARD VISUALIZATION ========== */
+    const KB_LAYOUT = [
+      ['', '', '', '', '', '', '', '', '', '', '', '', '', 'w'],
+      ['w', '', '', '', '', '', '', '', '', '', '', '', '', 'w'],
+      ['w', '', '', '', '', '', '', '', '', '', '', '', 'wider'],
+      ['wider', '', '', '', '', '', '', '', '', '', '', 'wider'],
+      ['w', 'w', 'w', 'space', 'w', 'w', 'w', 'w'],
+    ];
+
+    function buildKeyboard() {
+      const container = document.getElementById('kbRows');
+      container.innerHTML = '';
+      KB_LAYOUT.forEach(row => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'kb-row';
+        row.forEach(cls => {
+          const key = document.createElement('div');
+          key.className = 'kb-key' + (cls ? ` ${cls}` : '');
+          rowEl.appendChild(key);
+        });
+        container.appendChild(rowEl);
+      });
+    }
+    buildKeyboard();
+
+    function setKeysLit(on) {
+      const viz = document.getElementById('keyboardViz');
+      document.querySelectorAll('.kb-key').forEach(k => {
+        if (on) k.classList.add('lit');
+        else k.classList.remove('lit');
+      });
+      if (on) viz.classList.add('lit');
+      else viz.classList.remove('lit');
+    }
+
+    /* Visualization patterns that mirror actual effects */
+    const VIZ_PATTERNS = {
+      blink(speed) {
+        let on = true;
+        return setInterval(() => { setKeysLit(on); on = !on; }, 500 / speed);
+      },
+      breathe(speed) {
+        let phase = 0;
+        return setInterval(() => {
+          const val = (Math.sin(phase) + 1) / 2;
+          phase += 0.08 * speed;
+          const bright = val > 0.5;
+          setKeysLit(bright);
+        }, 50);
+      },
+      strobe(speed) {
+        let on = true;
+        return setInterval(() => { setKeysLit(on); on = !on; }, 80 / speed);
+      },
+      heartbeat(speed) {
+        const seq = [1,0,1,0,0,0,0,0,0,0];
+        let i = 0;
+        return setInterval(() => {
+          setKeysLit(!!seq[i % seq.length]);
+          i++;
+        }, 120 / speed);
+      },
+      sos(speed) {
+        // S O S in binary-ish timing
+        const pat = [1,0,1,0,1,0,0, 1,1,0,1,1,0,1,1,0,0, 1,0,1,0,1,0,0,0,0];
+        let i = 0;
+        return setInterval(() => {
+          setKeysLit(!!pat[i % pat.length]);
+          i++;
+        }, 150 / speed);
+      },
+      disco(speed) {
+        return setInterval(() => {
+          setKeysLit(Math.random() > 0.4);
+        }, 100 / speed);
+      },
+      lightning(speed) {
+        let ticks = 0;
+        let flashAt = Math.floor(Math.random() * 15) + 5;
+        let flashing = 0;
+        return setInterval(() => {
+          ticks++;
+          if (flashing > 0) {
+            setKeysLit(flashing % 2 === 1);
+            flashing--;
+            if (flashing === 0) {
+              flashAt = ticks + Math.floor(Math.random() * 15) + 5;
+            }
+          } else if (ticks >= flashAt) {
+            flashing = Math.floor(Math.random() * 5) + 2;
+          } else {
+            setKeysLit(false);
+          }
+        }, 60 / speed);
+      },
+      pulse(speed) {
+        let phase = 0;
+        return setInterval(() => {
+          phase += 0.12 * speed;
+          const val = Math.max(0, Math.sin(phase));
+          setKeysLit(val > 0.3);
+        }, 50);
+      },
+      candle(speed) {
+        return setInterval(() => {
+          setKeysLit(Math.random() < 0.7);
+        }, 80 / speed);
+      },
+      binary(speed) {
+        const bits = (new Date().getSeconds()).toString(2).padStart(6, '0').split('');
+        let i = 0;
+        return setInterval(() => {
+          if (i < bits.length) {
+            setKeysLit(bits[i] === '1');
+          } else {
+            setKeysLit(false);
+          }
+          i++;
+          if (i > bits.length + 2) {
+            i = 0;
+            const newBits = (new Date().getSeconds()).toString(2).padStart(6, '0').split('');
+            bits.splice(0, bits.length, ...newBits);
+          }
+        }, 300 / speed);
+      },
+    };
+
+    function startViz(effect, speed) {
+      stopViz();
+      const fn = VIZ_PATTERNS[effect];
+      if (fn) vizInterval = fn(speed);
+    }
+    function stopViz() {
+      if (vizInterval) clearInterval(vizInterval);
+      vizInterval = null;
+      setKeysLit(true);
+    }
+
+    /* ========== EFFECTS GRID ========== */
+    async function loadEffects() {
+      try {
+        const res = await fetch('/api/effects');
+        const effects = await res.json();
+        const grid = document.getElementById('effectsGrid');
+        grid.innerHTML = '';
+        effects.forEach(eff => {
+          const card = document.createElement('div');
+          card.className = 'effect-card';
+          card.dataset.effect = eff.id;
+          card.innerHTML = `
+            <span class="effect-icon">${eff.icon}</span>
+            <div class="effect-name">${eff.name}</div>
+            <div class="effect-desc">${eff.desc}</div>
+          `;
+          card.addEventListener('click', () => selectEffect(eff.id));
+          grid.appendChild(card);
+        });
+      } catch (e) {
+        console.error('Failed to load effects:', e);
+      }
+    }
+
+    function selectEffect(id) {
+      selectedEffect = id;
+      document.querySelectorAll('.effect-card').forEach(c => {
+        c.classList.toggle('selected', c.dataset.effect === id);
+      });
+      // If already running, switch effect live
+      if (isRunning) {
+        startEffect();
+      }
+    }
+
+    /* ========== API CALLS ========== */
+    async function startEffect() {
+      if (!selectedEffect) {
+        showToast('Select an effect first');
+        return;
+      }
+      const speed = parseFloat(document.getElementById('speedSlider').value);
+      try {
+        await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ effect: selectedEffect, speed }),
+        });
+        isRunning = true;
+        updateUI();
+        startViz(selectedEffect, speed);
+        showToast(`▶ ${selectedEffect} at ${speed.toFixed(1)}×`);
+      } catch (e) {
+        showToast('Failed to start effect');
+      }
+    }
+
+    async function stopEffect() {
+      try {
+        await fetch('/api/stop', { method: 'POST' });
+        isRunning = false;
+        updateUI();
+        stopViz();
+        showToast('⏹ Stopped');
+      } catch (e) {
+        showToast('Failed to stop');
+      }
+    }
+
+    function toggleEffect() {
+      if (isRunning) stopEffect();
+      else startEffect();
+    }
+
+    async function toggleLight() {
+      lightOn = !lightOn;
+      try {
+        await fetch('/api/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ on: lightOn }),
+        });
+        if (!isRunning) setKeysLit(lightOn);
+        showToast(lightOn ? '💡 Light ON' : '🌑 Light OFF');
+      } catch (e) { showToast('Failed to toggle'); }
+    }
+
+    async function redetect() {
+      showToast('🔄 Re-detecting…');
+      try {
+        const res = await fetch('/api/detect', { method: 'POST' });
+        const data = await res.json();
+        document.getElementById('methodText').textContent = data.method_display;
+        showToast(`✓ ${data.method_display}`);
+      } catch (e) {
+        showToast('Detection failed');
+      }
+    }
+
+    /* ========== SPEED SLIDER ========== */
+    const speedSlider = document.getElementById('speedSlider');
+    const speedValue = document.getElementById('speedValue');
+
+    speedSlider.addEventListener('input', () => {
+      const v = parseFloat(speedSlider.value);
+      speedValue.textContent = v.toFixed(1) + '×';
+    });
+
+    speedSlider.addEventListener('change', async () => {
+      const v = parseFloat(speedSlider.value);
+      if (isRunning) {
+        // Update speed live
+        await fetch('/api/speed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ speed: v }),
+        });
+        stopViz();
+        startViz(selectedEffect, v);
+      }
+    });
+
+    /* ========== UI UPDATES ========== */
+    function updateUI() {
+      const btn = document.getElementById('startBtn');
+      const badge = document.getElementById('statusBadge');
+      const statusText = document.getElementById('statusText');
+
+      if (isRunning) {
+        btn.innerHTML = '⏹&ensp;Stop Effect';
+        btn.classList.add('running');
+        badge.classList.add('active');
+        statusText.textContent = selectedEffect || 'Running';
+      } else {
+        btn.innerHTML = '▶&ensp;Start Effect';
+        btn.classList.remove('running');
+        badge.classList.remove('active');
+        statusText.textContent = 'Idle';
+      }
+    }
+
+    /* ========== TOAST ========== */
+    let toastTimer = null;
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+    }
+
+    /* ========== STATUS POLLING ========== */
+    async function pollStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        document.getElementById('methodText').textContent =
+          data.controller.method_display;
+        
+        // Dynamically update footer info
+        document.getElementById('footerInfo').innerHTML = 
+          'Lenovo Laptop &nbsp;·&nbsp; ' + data.controller.method_display;
+
+        // Show admin warning if not admin
+        const warn = document.getElementById('adminWarning');
+        if (data.controller.is_admin === false) {
+          warn.style.display = 'block';
+        } else {
+          warn.style.display = 'none';
+        }
+
+        if (data.engine.running !== isRunning) {
+          isRunning = data.engine.running;
+          selectedEffect = data.engine.current_effect;
+          updateUI();
+          if (isRunning) startViz(selectedEffect, data.engine.speed);
+          else stopViz();
+        }
+      } catch (e) {}
+    }
+
+    /* ========== KEYBOARD SHORTCUT ========== */
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && e.target === document.body) {
+        e.preventDefault();
+        toggleEffect();
+      }
+      if (e.code === 'Escape') {
+        stopEffect();
+      }
+    });
+
+    /* ========== INIT ========== */
+    loadEffects();
+    pollStatus();
+    setKeysLit(true);
+    setInterval(pollStatus, 3000);
+  </script>
+</body>
+</html>
