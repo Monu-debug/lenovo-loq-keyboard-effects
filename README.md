@@ -12,6 +12,7 @@ This program:
 2. Spins up a persistent PowerShell subprocess in the background.
 3. Uses .NET reflection to call Vantage's private `IdeaNotebookAddin.IdeaNotebookAgent` API.
 4. Toggles states directly in the energy driver in **under 15 milliseconds**, allowing fluid, synchronized visual effects.
+5. Employs a pointer-safe, low-level global Windows keyboard hook (`SetWindowsHookExW`) via python `ctypes` to handle real-time reactive events instantly without system input lag.
 
 ---
 
@@ -39,3 +40,4 @@ python app.py
 * 💓 **Heartbeat:** Natural double-pulse heart rhythm.
 * 🌩️ **Lightning:** Atmospheric random storm strikes.
 * 🔢 **Binary Clock:** Decodes the current seconds counter into binary blinks.
+* ⌨️ **React:** Keyboard backlight stays ON all the time and blinks/dips OFF briefly on typing.
