@@ -29,7 +29,8 @@ WM_SYSKEYDOWN = 0x0104
 if not hasattr(wintypes, 'HHOOK'):
     wintypes.HHOOK = wintypes.HANDLE
 
-HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+# Declare HOOKPROC to return c_void_p (64-bit on x64 systems) to prevent overflow crash!
+HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_void_p, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
 
 # Set up user32 and kernel32 signatures for pointer safety
 user32 = ctypes.windll.user32
@@ -311,7 +312,7 @@ class EffectEngine:
         self._hook_thread.start()
 
     def _stop_keyboard_hook(self):
-        """Terminated the hook loop and removes the global hook."""
+        """Terminates the hook loop and removes the global hook."""
         if self._hook_handle:
             # Post a quit message to the hook message loop thread
             user32.PostThreadMessageW(self._hook_thread.ident, 0x0012, 0, 0) # WM_QUIT = 0x0012
@@ -321,10 +322,14 @@ class EffectEngine:
     def _hook_message_loop(self):
         """Standard Windows message loop that handles keyboard events."""
         def hook_cb(nCode, wParam, lParam):
-            if nCode >= 0 and self.running:
-                if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                    # Signal keypress event asynchronously
-                    self._keypress_event.set()
+            try:
+                if nCode >= 0 and self.running:
+                    if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                        # Signal keypress event asynchronously
+                        self._keypress_event.set()
+            except Exception as e:
+                print(f"Keyboard hook exception: {e}")
+            # ALWAYS call and return CallNextHookEx to pass the keypress to other apps!
             return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
         # Keep a reference to prevent GC crash
