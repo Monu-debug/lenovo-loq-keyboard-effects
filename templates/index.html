@@ -499,6 +499,12 @@
           <button class="btn-option" id="reactModeBtn4" onclick="selectReactMode(4)">4. OFF (Flashes DIM)</button>
           <button class="btn-option" id="reactModeBtn5" onclick="selectReactMode(5)">5. OFF (Flashes MAX)</button>
         </div>
+
+        <div class="section-label" style="margin-top:1.2rem; margin-bottom:0.6rem">Key Hold Behavior</div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button class="btn-option selected" id="holdBehaviorBtn1" onclick="selectHoldBehavior(1)">1. Auto-Repeat Blink (Flicker)</button>
+          <button class="btn-option" id="holdBehaviorBtn2" onclick="selectHoldBehavior(2)">2. Stay Active Until Released (Solid Hold)</button>
+        </div>
       </div>
 
       <div class="btn-row">
@@ -535,6 +541,7 @@
     /* ========== STATE ========== */
     let selectedEffect = null;
     let reactMode = 1; // 1 = ON/Off, 2 = Dim/Max, 3 = Max/Dim
+    let holdBehavior = 1; // 1 = Constant flicker, 2 = Solid hold
     let isRunning = false;
     let lightOn = true;
     let vizInterval = null;
@@ -679,18 +686,46 @@
         else if (reactMode === 5) { base = 0; active = 2; }
 
         setKeysLit(base);
-        const handler = () => {
-          setKeysLit(active);
-          setTimeout(() => {
-            if (vizInterval && typeof vizInterval !== 'number') {
-              setKeysLit(base);
+        const heldKeys = new Set();
+        let activeTimeout = null;
+
+        const downHandler = (e) => {
+          if (holdBehavior === 2) {
+            if (!heldKeys.has(e.code)) {
+              heldKeys.add(e.code);
+              setKeysLit(active);
             }
-          }, 120 / speed);
+          } else {
+            setKeysLit(active);
+            if (activeTimeout) clearTimeout(activeTimeout);
+            activeTimeout = setTimeout(() => {
+              if (vizInterval && typeof vizInterval !== 'number') {
+                setKeysLit(base);
+              }
+            }, 120 / speed);
+          }
         };
-        window.addEventListener('keydown', handler);
+
+        const upHandler = (e) => {
+          if (holdBehavior === 2) {
+            heldKeys.delete(e.code);
+            if (heldKeys.size === 0) {
+              setTimeout(() => {
+                if (heldKeys.size === 0 && vizInterval && typeof vizInterval !== 'number') {
+                  setKeysLit(base);
+                }
+              }, 100 / speed);
+            }
+          }
+        };
+
+        window.addEventListener('keydown', downHandler);
+        window.addEventListener('keyup', upHandler);
         return {
           cleanup() {
-            window.removeEventListener('keydown', handler);
+            window.removeEventListener('keydown', downHandler);
+            window.removeEventListener('keyup', upHandler);
+            if (activeTimeout) clearTimeout(activeTimeout);
           }
         };
       },
@@ -759,11 +794,23 @@
 
     function selectReactMode(mode) {
       reactMode = mode;
-      document.querySelectorAll('.btn-option').forEach((btn, idx) => {
+      document.querySelectorAll('[id^="reactModeBtn"]').forEach((btn, idx) => {
         btn.classList.toggle('selected', (idx + 1) === mode);
       });
       
       // If running, restart to apply new sub-mode instantly
+      if (isRunning && selectedEffect === 'reactive') {
+        startEffect();
+      }
+    }
+
+    function selectHoldBehavior(behavior) {
+      holdBehavior = behavior;
+      document.querySelectorAll('[id^="holdBehaviorBtn"]').forEach((btn, idx) => {
+        btn.classList.toggle('selected', (idx + 1) === behavior);
+      });
+      
+      // If running, restart to apply new hold behavior instantly
       if (isRunning && selectedEffect === 'reactive') {
         startEffect();
       }
@@ -780,7 +827,7 @@
         await fetch('/api/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ effect: selectedEffect, speed, mode: reactMode }),
+          body: JSON.stringify({ effect: selectedEffect, speed, mode: reactMode, hold_behavior: holdBehavior }),
         });
         isRunning = true;
         updateUI();

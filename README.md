@@ -46,3 +46,7 @@ python app.py
   3. *Normal MAX (Flashes DIM):* Backlight stays full brightness, dips to DIM briefly on keystroke.
   4. *Normal OFF (Flashes DIM):* Backlight stays OFF, flashes DIM briefly on keystroke.
   5. *Normal OFF (Flashes MAX):* Backlight stays OFF, flashes to full brightness on keystroke.
+
+  *Includes 2 configurable key hold behaviors:*
+  * **Auto-Repeat Blink (Flicker):** Constant rapid blinking when keys are held down (auto-repeat keydown events).
+  * **Stay Active Until Released (Solid Hold):** Backlight stays in the active reaction state continuously as long as any keys are held down, returning to base state only after all keys are released.

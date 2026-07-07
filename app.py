@@ -23,7 +23,18 @@ app = Flask(__name__)
 # Define hook-related types and signatures for ctypes
 WH_KEYBOARD_LL = 13
 WM_KEYDOWN = 0x0100
+WM_KEYUP = 0x0101
 WM_SYSKEYDOWN = 0x0104
+WM_SYSKEYUP = 0x0105
+
+class KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("vkCode", wintypes.DWORD),
+        ("scanCode", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_ulonglong)
+    ]
 
 # Declare HHOOK type
 if not hasattr(wintypes, 'HHOOK'):
@@ -243,6 +254,8 @@ class EffectEngine:
         self.running = False
         self.current_effect = None
         self.speed = 1.0
+        self.mode = 1
+        self.hold_behavior = 1 # 1 = Constant blink, 2 = Stay active until held key released
         self._stop = threading.Event()
         self._thread = None
         
@@ -250,13 +263,19 @@ class EffectEngine:
         self._hook_handle = None
         self._hook_thread = None
         self._keypress_event = threading.Event()
+        self._keyrelease_event = threading.Event()
         self._hook_proc = None
+        self._pressed_keys = set()
+        self._keys_lock = threading.Lock()
 
-    def start(self, effect, speed=1.0, mode=1):
+    def start(self, effect, speed=1.0, mode=1, hold_behavior=1):
         self.stop()
         self.current_effect = effect
         self.speed = max(0.1, min(speed, 5.0))
         self.mode = mode
+        self.hold_behavior = hold_behavior
+        with self._keys_lock:
+            self._pressed_keys.clear()
         self.running = True
         self._stop.clear()
         
@@ -325,12 +344,22 @@ class EffectEngine:
         def hook_cb(nCode, wParam, lParam):
             try:
                 if nCode >= 0 and self.running:
+                    kbd = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+                    vk = kbd.vkCode
+                    
                     if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                        # Signal keypress event asynchronously
-                        self._keypress_event.set()
+                        with self._keys_lock:
+                            is_repeat = vk in self._pressed_keys
+                            if not is_repeat:
+                                self._pressed_keys.add(vk)
+                                self._keypress_event.set()
+                    elif wParam in (WM_KEYUP, WM_SYSKEYUP):
+                        with self._keys_lock:
+                            self._pressed_keys.discard(vk)
+                            if len(self._pressed_keys) == 0:
+                                self._keyrelease_event.set()
             except Exception as e:
                 print(f"Keyboard hook exception: {e}")
-            # ALWAYS call and return CallNextHookEx to pass the keypress to other apps!
             return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
         # Keep a reference to prevent GC crash
@@ -462,22 +491,35 @@ class EffectEngine:
             
         self.ctrl.set_brightness(base)
         self._keypress_event.clear()
+        self._keyrelease_event.clear()
         
         # Block until a key is pressed (with a timeout so we check running state periodically)
         if self._keypress_event.wait(timeout=0.2):
             # Reaction
             self.ctrl.set_brightness(active)
             
-            # Flash duration controlled by speed
-            dur = 0.12 / self.speed
-            self._wait(dur)
-            
-            # Turn back to base
-            self.ctrl.set_brightness(base)
-            self._keypress_event.clear()
-            
-            # Small refractory delay before next reaction to make it look clean
-            self._wait(0.04)
+            if str(self.hold_behavior) == "2":
+                # Solid Hold: Stay active as long as any keys are pressed
+                min_dur = 0.10 / self.speed
+                self._wait(min_dur)
+                
+                with self._keys_lock:
+                    keys_held = len(self._pressed_keys) > 0
+                
+                if keys_held:
+                    self._keyrelease_event.wait(timeout=5.0) # Safety timeout
+                
+                self.ctrl.set_brightness(base)
+                self._keypress_event.clear()
+                self._keyrelease_event.clear()
+                self._wait(0.04)
+            else:
+                # Constant Blinking
+                dur = 0.12 / self.speed
+                self._wait(dur)
+                self.ctrl.set_brightness(base)
+                self._keypress_event.clear()
+                self._wait(0.04)
 
     def get_status(self):
         return {
@@ -519,8 +561,9 @@ def api_start():
     effect = data.get("effect", "blink")
     speed = float(data.get("speed", 1.0))
     mode = data.get("mode", 1)
-    engine.start(effect, speed, mode)
-    return jsonify(status="started", effect=effect, speed=speed, mode=mode)
+    hold_behavior = int(data.get("hold_behavior", 1))
+    engine.start(effect, speed, mode, hold_behavior)
+    return jsonify(status="started", effect=effect, speed=speed, mode=mode, hold_behavior=hold_behavior)
 
 @app.route("/api/stop", methods=["POST"])
 def api_stop():
