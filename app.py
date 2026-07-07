@@ -453,6 +453,10 @@ class EffectEngine:
             base, active = 1, 2
         elif m == "3":
             base, active = 2, 1
+        elif m == "4":
+            base, active = 0, 1
+        elif m == "5":
+            base, active = 0, 2
         else: # Default/Mode 1
             base, active = 2, 0
             

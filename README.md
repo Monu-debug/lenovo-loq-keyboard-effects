@@ -40,7 +40,9 @@ python app.py
 * 💓 **Heartbeat:** Natural double-pulse heart rhythm.
 * 🌩️ **Lightning:** Atmospheric random storm strikes.
 * 🔢 **Binary Clock:** Decodes the current seconds counter into binary blinks.
-* ⌨️ **React:** Keypress reactive feedback with 3 selectable modes:
+* ⌨️ **React:** Keypress reactive feedback with 5 selectable modes:
   1. *Normal ON (Blinks OFF):* Backlight stays ON, dips OFF briefly on keystroke.
   2. *Normal DIM (Flashes MAX):* Backlight stays DIM, flashes to full brightness on keystroke.
   3. *Normal MAX (Flashes DIM):* Backlight stays full brightness, dips to DIM briefly on keystroke.
+  4. *Normal OFF (Flashes DIM):* Backlight stays OFF, flashes DIM briefly on keystroke.
+  5. *Normal OFF (Flashes MAX):* Backlight stays OFF, flashes to full brightness on keystroke.

@@ -496,6 +496,8 @@
           <button class="btn-option selected" id="reactModeBtn1" onclick="selectReactMode(1)">1. ON (Blinks OFF)</button>
           <button class="btn-option" id="reactModeBtn2" onclick="selectReactMode(2)">2. DIM (Flashes MAX)</button>
           <button class="btn-option" id="reactModeBtn3" onclick="selectReactMode(3)">3. MAX (Flashes DIM)</button>
+          <button class="btn-option" id="reactModeBtn4" onclick="selectReactMode(4)">4. OFF (Flashes DIM)</button>
+          <button class="btn-option" id="reactModeBtn5" onclick="selectReactMode(5)">5. OFF (Flashes MAX)</button>
         </div>
       </div>
 
@@ -673,6 +675,8 @@
         let base = 2, active = 0;
         if (reactMode === 2) { base = 1; active = 2; }
         else if (reactMode === 3) { base = 2; active = 1; }
+        else if (reactMode === 4) { base = 0; active = 1; }
+        else if (reactMode === 5) { base = 0; active = 2; }
 
         setKeysLit(base);
         const handler = () => {
