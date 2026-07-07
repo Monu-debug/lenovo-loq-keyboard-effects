@@ -623,6 +623,19 @@
           }
         }, 300 / speed);
       },
+      reactive(speed) {
+        setKeysLit(true);
+        const handler = () => {
+          setKeysLit(false);
+          setTimeout(() => setKeysLit(true), 120 / speed);
+        };
+        window.addEventListener('keydown', handler);
+        return {
+          cleanup() {
+            window.removeEventListener('keydown', handler);
+          }
+        };
+      },
     };
 
     function startViz(effect, speed) {
@@ -631,7 +644,13 @@
       if (fn) vizInterval = fn(speed);
     }
     function stopViz() {
-      if (vizInterval) clearInterval(vizInterval);
+      if (vizInterval) {
+        if (typeof vizInterval === 'number') {
+          clearInterval(vizInterval);
+        } else if (vizInterval && vizInterval.cleanup) {
+          vizInterval.cleanup();
+        }
+      }
       vizInterval = null;
       setKeysLit(true);
     }

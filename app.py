@@ -3,6 +3,7 @@ Keyboard Backlight Effects Controller for Lenovo laptops (IdeaPad / LOQ / Legion
 ================================================================================
 Interfaces with Lenovo Vantage's IdeaNotebookAddin DLLs to control keyboard backlight.
 Uses a persistent PowerShell subprocess for low-latency command execution.
+Includes a global keyboard hook to react to keystrokes in real-time.
 """
 
 import os
@@ -10,6 +11,7 @@ import sys
 import time
 import threading
 import ctypes
+from ctypes import wintypes
 import subprocess
 import glob
 import random
@@ -17,6 +19,33 @@ import datetime
 from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
+
+# Define hook-related types and signatures for ctypes
+WH_KEYBOARD_LL = 13
+WM_KEYDOWN = 0x0100
+WM_SYSKEYDOWN = 0x0104
+
+# Declare HHOOK type
+if not hasattr(wintypes, 'HHOOK'):
+    wintypes.HHOOK = wintypes.HANDLE
+
+HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+
+# Set up user32 and kernel32 signatures for pointer safety
+user32 = ctypes.windll.user32
+kernel32 = ctypes.windll.kernel32
+
+user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HMODULE, wintypes.DWORD]
+user32.SetWindowsHookExW.restype = wintypes.HHOOK
+
+user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
+user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+
+user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+user32.CallNextHookEx.restype = ctypes.c_void_p
+
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
 
 # ---------------------------------------------------------------------------
 #  Admin check & self-elevation
@@ -36,7 +65,6 @@ def find_lenovo_dlls():
     """Locate the latest version of Lenovo Vantage's IdeaNotebookAddin DLLs."""
     paths = glob.glob(r"C:\ProgramData\Lenovo\Vantage\Addins\IdeaNotebookAddin\*\KeyboardContract.dll")
     if paths:
-        # Sort to get the latest version
         paths.sort()
         latest_contract = paths[-1]
         folder = os.path.dirname(latest_contract)
@@ -69,7 +97,6 @@ class KeyboardBacklightController:
         dlls = find_lenovo_dlls()
         if dlls:
             try:
-                # Start persistent PowerShell
                 self.ps_proc = subprocess.Popen(
                     ["powershell", "-NoProfile", "-Command", "-"],
                     stdin=subprocess.PIPE,
@@ -79,7 +106,6 @@ class KeyboardBacklightController:
                     bufsize=1
                 )
                 
-                # Write initialization script
                 init_script = f"""
                 [System.Reflection.Assembly]::LoadFrom('{dlls["contract"]}') | Out-Null
                 [System.Reflection.Assembly]::LoadFrom('{dlls["json"]}') | Out-Null
@@ -108,7 +134,6 @@ class KeyboardBacklightController:
                 self.ps_proc.stdin.write(init_script + "\n")
                 self.ps_proc.stdin.flush()
                 
-                # Test call to ensure it is working
                 self._send_command("Level_2")
                 self.method = "lenovo_vantage_dll"
                 return
@@ -116,7 +141,6 @@ class KeyboardBacklightController:
                 print(f"Error initializing Vantage DLL control: {e}")
                 self.close_ps()
 
-        # Fallback
         self.method = "keyboard_leds"
 
     def _send_command(self, level_str):
@@ -126,7 +150,6 @@ class KeyboardBacklightController:
         try:
             self.ps_proc.stdin.write(f"Set-KbdBacklight '{level_str}'\n")
             self.ps_proc.stdin.flush()
-            # Read response line
             response = self.ps_proc.stdout.readline().strip()
             return response == f"OK:{level_str}"
         except Exception as e:
@@ -202,7 +225,7 @@ class KeyboardBacklightController:
 class EffectEngine:
     EFFECTS_META = [
         {"id": "blink",     "name": "Blink",        "icon": "💡",     "desc": "Classic on / off blinking"},
-        {"id": "breathe",   "name": "Breathe",      "icon": "🌊",   "desc": "Smooth fade in and out (Off->Low->High)"},
+        {"id": "breathe",   "name": "Breathe",      "icon": "🌊",   "desc": "Smooth fade in and out"},
         {"id": "strobe",    "name": "Strobe",        "icon": "⚡",    "desc": "Rapid strobe flashing"},
         {"id": "heartbeat", "name": "Heartbeat",     "icon": "💓", "desc": "Double-pulse heartbeat rhythm"},
         {"id": "sos",       "name": "SOS",           "icon": "🆘",       "desc": "Morse code SOS signal"},
@@ -211,6 +234,7 @@ class EffectEngine:
         {"id": "pulse",     "name": "Pulse",         "icon": "📡",     "desc": "Quick flash, slow fade"},
         {"id": "candle",    "name": "Candle",        "icon": "🕯️",    "desc": "Flickering candle flame"},
         {"id": "binary",    "name": "Binary Clock",  "icon": "🔢",    "desc": "Blinks seconds in binary"},
+        {"id": "reactive",  "name": "React",         "icon": "⌨️",     "desc": "On all time, blinks off on typing"},
     ]
 
     def __init__(self, ctrl):
@@ -220,6 +244,12 @@ class EffectEngine:
         self.speed = 1.0
         self._stop = threading.Event()
         self._thread = None
+        
+        # Keyboard Hook fields
+        self._hook_handle = None
+        self._hook_thread = None
+        self._keypress_event = threading.Event()
+        self._hook_proc = None
 
     def start(self, effect, speed=1.0):
         self.stop()
@@ -227,12 +257,21 @@ class EffectEngine:
         self.speed = max(0.1, min(speed, 5.0))
         self.running = True
         self._stop.clear()
+        
+        # Start global keyboard hook if reactive mode is selected
+        if self.current_effect == "reactive":
+            self._start_keyboard_hook()
+            
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def stop(self):
         self.running = False
         self._stop.set()
+        
+        # Terminate keyboard hook if active
+        self._stop_keyboard_hook()
+        
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
         self.ctrl.set_backlight(True)
@@ -249,6 +288,7 @@ class EffectEngine:
             "sos": self._sos, "disco": self._disco,
             "lightning": self._lightning, "pulse": self._pulse,
             "candle": self._candle, "binary": self._binary,
+            "reactive": self._reactive,
         }
         fn = fns.get(self.current_effect)
         if not fn:
@@ -262,6 +302,53 @@ class EffectEngine:
         finally:
             self.ctrl.set_backlight(True)
 
+    # -- Keyboard Hook Management -------------------------------------------
+
+    def _start_keyboard_hook(self):
+        """Starts the low-level global Windows keyboard hook thread."""
+        self._keypress_event.clear()
+        self._hook_thread = threading.Thread(target=self._hook_message_loop, daemon=True)
+        self._hook_thread.start()
+
+    def _stop_keyboard_hook(self):
+        """Terminated the hook loop and removes the global hook."""
+        if self._hook_handle:
+            # Post a quit message to the hook message loop thread
+            user32.PostThreadMessageW(self._hook_thread.ident, 0x0012, 0, 0) # WM_QUIT = 0x0012
+            self._hook_handle = None
+        self._keypress_event.clear()
+
+    def _hook_message_loop(self):
+        """Standard Windows message loop that handles keyboard events."""
+        def hook_cb(nCode, wParam, lParam):
+            if nCode >= 0 and self.running:
+                if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                    # Signal keypress event asynchronously
+                    self._keypress_event.set()
+            return user32.CallNextHookEx(None, nCode, wParam, lParam)
+
+        # Keep a reference to prevent GC crash
+        self._hook_proc = HOOKPROC(hook_cb)
+        hmod = kernel32.GetModuleHandleW(None)
+        
+        self._hook_handle = user32.SetWindowsHookExW(
+            WH_KEYBOARD_LL,
+            self._hook_proc,
+            hmod,
+            0
+        )
+
+        if not self._hook_handle:
+            print(f"Global Keyboard Hook failed! Error: {kernel32.GetLastError()}")
+            return
+
+        msg = wintypes.MSG()
+        while self.running and user32.GetMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+            
+        user32.UnhookWindowsHookEx(self._hook_handle)
+
     # -- Effects ------------------------------------------------------------
 
     def _blink(self):
@@ -272,7 +359,6 @@ class EffectEngine:
         if self._wait(d): return True
 
     def _breathe(self):
-        # Stepped breathe for 3-level backlit (Off -> Dim -> Bright -> Dim -> Off)
         d = 0.35 / self.speed
         self.ctrl.set_brightness(0)
         if self._wait(d): return True
@@ -354,6 +440,27 @@ class EffectEngine:
         self.ctrl.set_backlight(False)
         if self._wait(0.6 / self.speed): return True
 
+    def _reactive(self):
+        """Keyboard lights stay ON all time and react (dip OFF) on keypresses."""
+        self.ctrl.set_brightness(2)
+        self._keypress_event.clear()
+        
+        # Block until a key is pressed (with a timeout so we check running state periodically)
+        if self._keypress_event.wait(timeout=0.2):
+            # Reaction: Dip/Blink off
+            self.ctrl.set_brightness(0)
+            
+            # Off duration controlled by speed (faster speed = quicker flash back to ON)
+            off_dur = 0.12 / self.speed
+            self._wait(off_dur)
+            
+            # Turn back ON
+            self.ctrl.set_brightness(2)
+            self._keypress_event.clear()
+            
+            # Small refractory delay before next reaction to make it look clean
+            self._wait(0.04)
+
     def get_status(self):
         return {
             "running": self.running,
@@ -421,6 +528,7 @@ def api_toggle():
 import atexit
 @atexit.register
 def cleanup():
+    engine.stop()
     controller.close_ps()
 
 # ---------------------------------------------------------------------------
@@ -429,7 +537,6 @@ def cleanup():
 
 if __name__ == "__main__":
     if not is_admin():
-        # Re-launch self as admin
         print("Requesting Administrator privileges...")
         try:
             ctypes.windll.shell32.ShellExecuteW(
