@@ -352,7 +352,7 @@ class EffectEngine:
                             is_repeat = vk in self._pressed_keys
                             if not is_repeat:
                                 self._pressed_keys.add(vk)
-                                self._keypress_event.set()
+                        self._keypress_event.set()
                     elif wParam in (WM_KEYUP, WM_SYSKEYUP):
                         with self._keys_lock:
                             self._pressed_keys.discard(vk)
