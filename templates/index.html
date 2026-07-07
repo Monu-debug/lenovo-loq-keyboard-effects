@@ -159,6 +159,12 @@
       border-color: rgba(120,200,255,0.30);
       box-shadow: 0 0 12px rgba(120,200,255,0.15), inset 0 0 6px rgba(120,200,255,0.08);
     }
+    .kb-key.dim {
+      background: rgba(120,200,255,0.08);
+      border-color: rgba(120,200,255,0.15);
+      box-shadow: 0 0 6px rgba(120,200,255,0.05);
+    }
+    .keyboard-viz.dim::before { opacity: 0.12; }
 
     /* ========== SECTION HEADERS ========== */
     .section-label {
@@ -230,6 +236,28 @@
       border-radius: var(--radius);
       padding: 1.5rem;
       margin-bottom: 1.5rem;
+    }
+    .btn-option {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.6);
+      padding: 0.5rem 0.8rem;
+      border-radius: 8px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+    .btn-option:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.15);
+      color: #fff;
+    }
+    .btn-option.selected {
+      background: rgba(147, 51, 234, 0.15);
+      border-color: rgba(147, 51, 234, 0.4);
+      color: #d8b4fe;
+      box-shadow: 0 0 12px rgba(147, 51, 234, 0.15);
     }
 
     /* Speed slider */
@@ -461,6 +489,16 @@
         </div>
       </div>
 
+      <!-- REACTIVE OPTIONS -->
+      <div class="reactive-options" id="reactiveOptions" style="display:none; margin-top:1rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:1rem; margin-bottom:1.5rem;">
+        <div class="section-label" style="margin-bottom:0.6rem">React Mode Option</div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button class="btn-option selected" id="reactModeBtn1" onclick="selectReactMode(1)">1. ON (Blinks OFF)</button>
+          <button class="btn-option" id="reactModeBtn2" onclick="selectReactMode(2)">2. DIM (Flashes MAX)</button>
+          <button class="btn-option" id="reactModeBtn3" onclick="selectReactMode(3)">3. MAX (Flashes DIM)</button>
+        </div>
+      </div>
+
       <div class="btn-row">
         <button class="btn btn-start" id="startBtn" onclick="toggleEffect()">
           ▶&ensp;Start Effect
@@ -494,6 +532,7 @@
   <script>
     /* ========== STATE ========== */
     let selectedEffect = null;
+    let reactMode = 1; // 1 = ON/Off, 2 = Dim/Max, 3 = Max/Dim
     let isRunning = false;
     let lightOn = true;
     let vizInterval = null;
@@ -523,14 +562,21 @@
     }
     buildKeyboard();
 
-    function setKeysLit(on) {
+    function setKeysLit(level) {
       const viz = document.getElementById('keyboardViz');
-      document.querySelectorAll('.kb-key').forEach(k => {
-        if (on) k.classList.add('lit');
-        else k.classList.remove('lit');
-      });
-      if (on) viz.classList.add('lit');
-      else viz.classList.remove('lit');
+      const keys = document.querySelectorAll('.kb-key');
+      
+      // Clean up previous states
+      keys.forEach(k => k.classList.remove('lit', 'dim'));
+      viz.classList.remove('lit', 'dim');
+      
+      if (level === 2 || level === true) {
+        keys.forEach(k => k.classList.add('lit'));
+        viz.classList.add('lit');
+      } else if (level === 1) {
+        keys.forEach(k => k.classList.add('dim'));
+        viz.classList.add('dim');
+      }
     }
 
     /* Visualization patterns that mirror actual effects */
@@ -624,10 +670,18 @@
         }, 300 / speed);
       },
       reactive(speed) {
-        setKeysLit(true);
+        let base = 2, active = 0;
+        if (reactMode === 2) { base = 1; active = 2; }
+        else if (reactMode === 3) { base = 2; active = 1; }
+
+        setKeysLit(base);
         const handler = () => {
-          setKeysLit(false);
-          setTimeout(() => setKeysLit(true), 120 / speed);
+          setKeysLit(active);
+          setTimeout(() => {
+            if (vizInterval && typeof vizInterval !== 'number') {
+              setKeysLit(base);
+            }
+          }, 120 / speed);
         };
         window.addEventListener('keydown', handler);
         return {
@@ -684,8 +738,29 @@
       document.querySelectorAll('.effect-card').forEach(c => {
         c.classList.toggle('selected', c.dataset.effect === id);
       });
+      
+      // Show/hide reactive sub-mode options UI
+      const reactOpts = document.getElementById('reactiveOptions');
+      if (id === 'reactive') {
+        reactOpts.style.display = 'block';
+      } else {
+        reactOpts.style.display = 'none';
+      }
+      
       // If already running, switch effect live
       if (isRunning) {
+        startEffect();
+      }
+    }
+
+    function selectReactMode(mode) {
+      reactMode = mode;
+      document.querySelectorAll('.btn-option').forEach((btn, idx) => {
+        btn.classList.toggle('selected', (idx + 1) === mode);
+      });
+      
+      // If running, restart to apply new sub-mode instantly
+      if (isRunning && selectedEffect === 'reactive') {
         startEffect();
       }
     }
@@ -701,7 +776,7 @@
         await fetch('/api/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ effect: selectedEffect, speed }),
+          body: JSON.stringify({ effect: selectedEffect, speed, mode: reactMode }),
         });
         isRunning = true;
         updateUI();

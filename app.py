@@ -252,10 +252,11 @@ class EffectEngine:
         self._keypress_event = threading.Event()
         self._hook_proc = None
 
-    def start(self, effect, speed=1.0):
+    def start(self, effect, speed=1.0, mode=1):
         self.stop()
         self.current_effect = effect
         self.speed = max(0.1, min(speed, 5.0))
+        self.mode = mode
         self.running = True
         self._stop.clear()
         
@@ -446,21 +447,29 @@ class EffectEngine:
         if self._wait(0.6 / self.speed): return True
 
     def _reactive(self):
-        """Keyboard lights stay ON all time and react (dip OFF) on keypresses."""
-        self.ctrl.set_brightness(2)
+        """Keyboard lights react to keypresses based on the selected mode."""
+        m = str(self.mode)
+        if m == "2":
+            base, active = 1, 2
+        elif m == "3":
+            base, active = 2, 1
+        else: # Default/Mode 1
+            base, active = 2, 0
+            
+        self.ctrl.set_brightness(base)
         self._keypress_event.clear()
         
         # Block until a key is pressed (with a timeout so we check running state periodically)
         if self._keypress_event.wait(timeout=0.2):
-            # Reaction: Dip/Blink off
-            self.ctrl.set_brightness(0)
+            # Reaction
+            self.ctrl.set_brightness(active)
             
-            # Off duration controlled by speed (faster speed = quicker flash back to ON)
-            off_dur = 0.12 / self.speed
-            self._wait(off_dur)
+            # Flash duration controlled by speed
+            dur = 0.12 / self.speed
+            self._wait(dur)
             
-            # Turn back ON
-            self.ctrl.set_brightness(2)
+            # Turn back to base
+            self.ctrl.set_brightness(base)
             self._keypress_event.clear()
             
             # Small refractory delay before next reaction to make it look clean
@@ -505,8 +514,9 @@ def api_start():
     data = request.json or {}
     effect = data.get("effect", "blink")
     speed = float(data.get("speed", 1.0))
-    engine.start(effect, speed)
-    return jsonify(status="started", effect=effect, speed=speed)
+    mode = data.get("mode", 1)
+    engine.start(effect, speed, mode)
+    return jsonify(status="started", effect=effect, speed=speed, mode=mode)
 
 @app.route("/api/stop", methods=["POST"])
 def api_stop():
