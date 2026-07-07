@@ -2,6 +2,11 @@
 
 A lightweight, modern web-based control panel to apply custom lighting effects (blinking, breathing, strobe, lightning, binary clock, etc.) to the white-backlit keyboards on Lenovo LOQ and IdeaPad Gaming laptops under Windows.
 
+> [!IMPORTANT]
+> **Tested Hardware & OS Configuration:**
+> * **Model:** Lenovo LOQ 2024 (15IAX9)
+> * **Operating System:** Windows 11 Home
+
 This project bypasses traditional high-latency command prompts by communicating directly with Lenovo's VPC energy management driver (`\\.\EnergyDrv`) using the native Lenovo Vantage helper DLLs.
 
 ## 🚀 How it Works (Under the Hood)
