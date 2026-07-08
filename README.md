@@ -4,7 +4,8 @@ A lightweight, modern web-based control panel to apply custom lighting effects (
 
 > [!IMPORTANT]
 > **Tested Hardware & OS Configuration:**
-> * **Model:** Lenovo LOQ 2024 (15IAX9)
+> * **Model:** Lenovo LOQ 2024 (15IAX9) (Tested & Verified)
+> * **Compatible Models:** Designed to support Lenovo LOQ 15IRX9 and other LOQ/IdeaPad Gaming laptops utilizing Vantage backlight DLLs.
 > * **Operating System:** Windows 11 Home
 
 This project bypasses traditional high-latency command prompts by communicating directly with Lenovo's VPC energy management driver (`\\.\EnergyDrv`) using the native Lenovo Vantage helper DLLs.
