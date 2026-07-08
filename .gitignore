@@ -6,3 +6,5 @@ results*.txt
 diagnose.py
 .idea/
 .vscode/
+keyboard-effects.exe
+*.zip

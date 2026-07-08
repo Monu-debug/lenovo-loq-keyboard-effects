@@ -18,7 +18,12 @@ import random
 import datetime
 from flask import Flask, render_template, jsonify, request
 
-app = Flask(__name__)
+# Configure Flask templates path to support PyInstaller --onefile bundle
+if getattr(sys, 'frozen', False):
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    app = Flask(__name__, template_folder=template_folder)
+else:
+    app = Flask(__name__)
 
 # Define hook-related types and signatures for ctypes
 WH_KEYBOARD_LL = 13
@@ -613,10 +618,18 @@ if __name__ == "__main__":
     if not is_admin():
         print("Requesting Administrator privileges...")
         try:
-            ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable,
-                f'"{os.path.abspath(__file__)}"', None, 1
-            )
+            if getattr(sys, 'frozen', False):
+                # Under PyInstaller, sys.executable points to the compiled EXE.
+                # Running sys.executable with runas elevates it directly.
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", sys.executable,
+                    " ".join(sys.argv[1:]), None, 1
+                )
+            else:
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", sys.executable,
+                    f'"{os.path.abspath(__file__)}"', None, 1
+                )
             sys.exit(0)
         except Exception:
             print("Could not elevate. Please right-click and Run as Administrator.")
