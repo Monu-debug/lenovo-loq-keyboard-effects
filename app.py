@@ -101,8 +101,19 @@ class KeyboardBacklightController:
         self._lock = threading.Lock()
         self.ps_proc = None
         self._admin = is_admin()
+        self.system_model = self._get_system_model()
         
         self.detect_method()
+
+    def _get_system_model(self):
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\BIOS")
+            model = winreg.QueryValueEx(key, "SystemProductName")[0]
+            winreg.CloseKey(key)
+            return model.strip()
+        except Exception:
+            return "Lenovo Laptop"
 
     def detect_method(self):
         """Initialize the persistent PowerShell controller or fall back."""
@@ -228,6 +239,7 @@ class KeyboardBacklightController:
             "current_level": self.current_level,
             "max_level": self.max_level,
             "is_admin": self._admin,
+            "system_model": self.system_model,
         }
 
 # ---------------------------------------------------------------------------

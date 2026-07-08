@@ -530,7 +530,7 @@
 
     <!-- FOOTER -->
     <div class="info-footer animate-in delay-4" id="footerInfo">
-      Lenovo 83GS &nbsp;·&nbsp; LENOVO_LIGHTING_METHOD
+      Lenovo Laptop &nbsp;·&nbsp; Detecting controller...
     </div>
   </div>
 
@@ -942,7 +942,7 @@
         
         // Dynamically update footer info
         document.getElementById('footerInfo').innerHTML = 
-          'Lenovo Laptop &nbsp;·&nbsp; ' + data.controller.method_display;
+          (data.controller.system_model || 'Lenovo Laptop') + ' &nbsp;·&nbsp; ' + data.controller.method_display;
 
         // Show admin warning if not admin
         const warn = document.getElementById('adminWarning');
