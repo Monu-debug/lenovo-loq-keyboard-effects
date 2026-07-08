@@ -24,13 +24,19 @@ This program:
 
 ## 🛠️ Setup & Running
 
-### Option A: The One-Click Way (Recommended)
-1. Ensure you have [Python](https://www.python.org/downloads/) installed.
-2. Double-click `run.bat`.
+### Option A: Standalone Executable (Easiest - No Python Required)
+1. Download the compiled `keyboard-effects.exe`.
+2. Double-click to run it.
 3. Accept the **UAC Administrator prompt** (needed to communicate with the hardware driver).
 4. Open your browser to **[http://localhost:5000](http://localhost:5000)**.
 
-### Option B: Manual Terminal Execution
+### Option B: The One-Click Batch Way (Requires Python)
+1. Ensure you have [Python](https://www.python.org/downloads/) installed.
+2. Double-click `run.bat`.
+3. Accept the **UAC Administrator prompt**.
+4. Open your browser to **[http://localhost:5000](http://localhost:5000)**.
+
+### Option C: Manual Terminal Execution
 Open your terminal as Administrator and run:
 ```bash
 pip install -r requirements.txt
