@@ -24,19 +24,24 @@ This program:
 
 ## 🛠️ Setup & Running
 
-### Option A: Standalone Executable (Easiest - No Python Required)
-1. Download the compiled `keyboard-effects.exe`.
-2. Double-click to run it.
-3. Accept the **UAC Administrator prompt** (needed to communicate with the hardware driver).
-4. Open your browser to **[http://localhost:5000](http://localhost:5000)**.
+### Option A: Silent Background Agent (Easiest - No Dashboard, No Python)
+1. Download the compiled **`keyboard-effects-agent.exe`** and run it.
+2. It runs silently in the **Windows System Tray** (next to your system clock) without any console window!
+3. Right-click the tray icon to:
+   * Edit settings (automatically opens **`config.json`** in Notepad).
+   * Toggle active effects on/off.
+   * Exit the agent.
+4. Saving changes in `config.json` updates the active keyboard lighting effects immediately!
 
-### Option B: The One-Click Batch Way (Requires Python)
-1. Ensure you have [Python](https://www.python.org/downloads/) installed.
-2. Double-click `run.bat`.
-3. Accept the **UAC Administrator prompt**.
-4. Open your browser to **[http://localhost:5000](http://localhost:5000)**.
+### Option B: Standalone Web Dashboard (No Python)
+1. Download the compiled **`keyboard-effects.exe`** and run it.
+2. Accept the **UAC Administrator prompt** and open your browser to **[http://localhost:5000](http://localhost:5000)**.
 
-### Option C: Manual Terminal Execution
+### Option C: The One-Click Batch Way (Requires Python)
+1. Double-click `run.bat` (UAC prompt will elevate it).
+2. Open your browser to **[http://localhost:5000](http://localhost:5000)**.
+
+### Option D: Manual Terminal Execution
 Open your terminal as Administrator and run:
 ```bash
 pip install -r requirements.txt
