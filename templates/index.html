@@ -440,6 +440,73 @@
     .delay-2 { animation-delay: 0.1s; }
     .delay-3 { animation-delay: 0.15s; }
     .delay-4 { animation-delay: 0.2s; }
+    /* Settings panel */
+    .settings-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .settings-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 0;
+    }
+    .settings-row:not(:last-child) {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .settings-info h3 {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.2rem;
+    }
+    .settings-info p {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+    }
+    /* Switch toggle */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 24px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      transition: .3s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: var(--text-secondary);
+      transition: .3s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: rgba(120, 200, 255, 0.15);
+      border-color: var(--accent);
+    }
+    input:checked + .slider:before {
+      transform: translateX(18px);
+      background-color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -507,6 +574,33 @@
         </div>
       </div>
 
+      <!-- MUSIC OPTIONS -->
+      <div class="music-options" id="musicOptions" style="display:none; margin-top:1rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:1rem; margin-bottom:1.5rem;">
+        <!-- SENSITIVITY SLIDER -->
+        <div class="speed-control" style="margin-bottom:1.5rem;">
+          <div class="speed-header">
+            <span class="section-label" style="margin:0">Music Sensitivity</span>
+            <span class="speed-value" id="sensitivityValue">50%</span>
+          </div>
+          <div class="slider-track">
+            <input type="range" id="sensitivitySlider" min="0.1" max="1.0" step="0.05" value="0.5" />
+          </div>
+          <div class="speed-labels">
+            <span>Mild</span><span>Balanced</span><span>High</span><span>Insane</span>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-bottom:0.6rem">Beat Reactive Sub-Mode</div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button class="btn-option selected" id="musicModeBtn1" onclick="selectMusicMode(1)">1. OFF but DIM on beat</button>
+          <button class="btn-option" id="musicModeBtn2" onclick="selectMusicMode(2)">2. DIM but MAX on beat</button>
+          <button class="btn-option" id="musicModeBtn3" onclick="selectMusicMode(3)">3. MAX but DIM on beat</button>
+          <button class="btn-option" id="musicModeBtn4" onclick="selectMusicMode(4)">4. OFF but MAX on beat</button>
+          <button class="btn-option" id="musicModeBtn5" onclick="selectMusicMode(5)">5. MAX but OFF on beat</button>
+          <button class="btn-option" id="musicModeBtn6" onclick="selectMusicMode(6)">6. Random Mix</button>
+        </div>
+      </div>
+
       <div class="btn-row">
         <button class="btn btn-start" id="startBtn" onclick="toggleEffect()">
           ▶&ensp;Start Effect
@@ -517,6 +611,33 @@
         <button class="btn btn-redetect" onclick="redetect()" title="Re-detect control method">
           🔄
         </button>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="settings-panel animate-in delay-4">
+      <div class="section-label" style="margin-bottom: 0.5rem;">System Settings</div>
+      
+      <div class="settings-row">
+        <div class="settings-info">
+          <h3>Start on Windows Boot</h3>
+          <p>Launch the app automatically when starting Windows</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="startupToggle" onchange="toggleStartupSetting(this.checked)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      
+      <div class="settings-row">
+        <div class="settings-info">
+          <h3>Minimize to System Tray</h3>
+          <p>Minimize to tray instead of closing the app</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="trayToggle" onchange="toggleTraySetting(this.checked)" />
+          <span class="slider"></span>
+        </label>
       </div>
     </div>
 
@@ -780,11 +901,11 @@
       
       // Show/hide reactive sub-mode options UI
       const reactOpts = document.getElementById('reactiveOptions');
-      if (id === 'reactive') {
-        reactOpts.style.display = 'block';
-      } else {
-        reactOpts.style.display = 'none';
-      }
+      reactOpts.style.display = (id === 'reactive') ? 'block' : 'none';
+      
+      // Show/hide music reactive options UI
+      const musicOpts = document.getElementById('musicOptions');
+      musicOpts.style.display = (id === 'music') ? 'block' : 'none';
       
       // If already running, switch effect live
       if (isRunning) {
@@ -816,6 +937,19 @@
       }
     }
 
+    let musicMode = 1;
+    function selectMusicMode(mode) {
+      musicMode = mode;
+      document.querySelectorAll('[id^="musicModeBtn"]').forEach((btn, idx) => {
+        btn.classList.toggle('selected', (idx + 1) === mode);
+      });
+      
+      // If running, restart to apply new sub-mode instantly
+      if (isRunning && selectedEffect === 'music') {
+        startEffect();
+      }
+    }
+
     /* ========== API CALLS ========== */
     async function startEffect() {
       if (!selectedEffect) {
@@ -823,16 +957,17 @@
         return;
       }
       const speed = parseFloat(document.getElementById('speedSlider').value);
+      const activeMode = selectedEffect === 'music' ? musicMode : reactMode;
       try {
         await fetch('/api/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ effect: selectedEffect, speed, mode: reactMode, hold_behavior: holdBehavior }),
+          body: JSON.stringify({ effect: selectedEffect, speed, mode: activeMode, hold_behavior: holdBehavior }),
         });
         isRunning = true;
         updateUI();
         startViz(selectedEffect, speed);
-        showToast(`▶ ${selectedEffect} at ${speed.toFixed(1)}×`);
+        showToast(`▶ ${selectedEffect} started`);
       } catch (e) {
         showToast('Failed to start effect');
       }
@@ -903,6 +1038,29 @@
       }
     });
 
+    /* ========== SENSITIVITY SLIDER ========== */
+    const sensSlider = document.getElementById('sensitivitySlider');
+    const sensValue = document.getElementById('sensitivityValue');
+
+    sensSlider.addEventListener('input', () => {
+      const v = parseFloat(sensSlider.value);
+      sensValue.textContent = Math.round(v * 100) + '%';
+    });
+
+    sensSlider.addEventListener('change', async () => {
+      const v = parseFloat(sensSlider.value);
+      try {
+        await fetch('/api/sensitivity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sensitivity: v }),
+        });
+        showToast(`🎚 Sensitivity: ${Math.round(v * 100)}%`);
+      } catch (e) {
+        showToast('Failed to update sensitivity');
+      }
+    });
+
     /* ========== UI UPDATES ========== */
     function updateUI() {
       const btn = document.getElementById('startBtn');
@@ -952,12 +1110,34 @@
           warn.style.display = 'none';
         }
 
-        if (data.engine.running !== isRunning) {
+        if (data.engine.running !== isRunning || data.engine.current_effect !== selectedEffect) {
           isRunning = data.engine.running;
           selectedEffect = data.engine.current_effect;
+          
+          // Update card selection styling
+          document.querySelectorAll('.effect-card').forEach(c => {
+            c.classList.toggle('selected', c.dataset.effect === selectedEffect);
+          });
+          
+          // Toggle options cards visibility
+          document.getElementById('reactiveOptions').style.display = (selectedEffect === 'reactive') ? 'block' : 'none';
+          document.getElementById('musicOptions').style.display = (selectedEffect === 'music') ? 'block' : 'none';
+          
           updateUI();
           if (isRunning) startViz(selectedEffect, data.engine.speed);
           else stopViz();
+        }
+
+        // Sync sensitivity and sub-modes
+        if (data.engine.sensitivity !== undefined) {
+          document.getElementById('sensitivitySlider').value = data.engine.sensitivity;
+          document.getElementById('sensitivityValue').textContent = Math.round(data.engine.sensitivity * 100) + '%';
+        }
+        if (selectedEffect === 'music' && data.engine.mode !== undefined) {
+          musicMode = data.engine.mode;
+          document.querySelectorAll('[id^="musicModeBtn"]').forEach((btn, idx) => {
+            btn.classList.toggle('selected', (idx + 1) === musicMode);
+          });
         }
       } catch (e) {}
     }
@@ -973,9 +1153,48 @@
       }
     });
 
+    /* ========== SYSTEM SETTINGS ========== */
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/settings');
+        const settings = await res.json();
+        document.getElementById('startupToggle').checked = settings.start_at_boot;
+        document.getElementById('trayToggle').checked = settings.minimize_to_tray;
+      } catch (e) {
+        console.error('Failed to load settings', e);
+      }
+    }
+
+    async function toggleStartupSetting(enable) {
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start_at_boot: enable }),
+        });
+        showToast(enable ? '🚀 Start at Boot Enabled' : '🚀 Start at Boot Disabled');
+      } catch (e) {
+        showToast('Failed to update startup setting');
+      }
+    }
+
+    async function toggleTraySetting(enable) {
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ minimize_to_tray: enable }),
+        });
+        showToast(enable ? '📥 Minimize to Tray Enabled' : '📥 Minimize to Tray Disabled');
+      } catch (e) {
+        showToast('Failed to update tray setting');
+      }
+    }
+
     /* ========== INIT ========== */
     loadEffects();
     pollStatus();
+    loadSettings();
     setKeysLit(true);
     setInterval(pollStatus, 3000);
   </script>

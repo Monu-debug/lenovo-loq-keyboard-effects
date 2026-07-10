@@ -16,6 +16,10 @@ import subprocess
 import glob
 import random
 import datetime
+import json
+import winreg
+import pystray
+from PIL import Image, ImageDraw
 from flask import Flask, render_template, jsonify, request
 
 # Configure Flask templates path to support PyInstaller --onefile bundle
@@ -125,13 +129,18 @@ class KeyboardBacklightController:
         dlls = find_lenovo_dlls()
         if dlls:
             try:
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
                 self.ps_proc = subprocess.Popen(
                     ["powershell", "-NoProfile", "-Command", "-"],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    bufsize=1
+                    bufsize=1,
+                    startupinfo=startupinfo,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
                 )
                 
                 init_script = f"""
@@ -264,6 +273,7 @@ class EffectEngine:
         {"id": "candle",    "name": "Candle",        "icon": "🕯️",    "desc": "Flickering candle flame"},
         {"id": "binary",    "name": "Binary Clock",  "icon": "🔢",    "desc": "Blinks seconds in binary"},
         {"id": "reactive",  "name": "React",         "icon": "⌨️",     "desc": "On all time, blinks off on typing"},
+        {"id": "music",     "name": "Music Reactive", "icon": "🎵",     "desc": "Reacts to computer music beats"},
     ]
 
     def __init__(self, ctrl):
@@ -285,6 +295,13 @@ class EffectEngine:
         self._pressed_keys = set()
         self._keys_lock = threading.Lock()
 
+        # Audio stream fields
+        self.sensitivity = 0.5
+        self.audio_stream = None
+        self.audio_history = []
+        self.last_beat_time = 0.0
+        self.beat_timer = None
+
     def start(self, effect, speed=1.0, mode=1, hold_behavior=1):
         self.stop()
         self.current_effect = effect
@@ -300,6 +317,10 @@ class EffectEngine:
         if self.current_effect == "reactive":
             self._start_keyboard_hook()
             
+        # Start loopback recording if music reactive mode is selected
+        if self.current_effect == "music":
+            self.start_audio()
+            
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -309,6 +330,9 @@ class EffectEngine:
         
         # Terminate keyboard hook if active
         self._stop_keyboard_hook()
+        
+        # Terminate audio recording if active
+        self.stop_audio()
         
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
@@ -326,7 +350,7 @@ class EffectEngine:
             "sos": self._sos, "disco": self._disco,
             "lightning": self._lightning, "pulse": self._pulse,
             "candle": self._candle, "binary": self._binary,
-            "reactive": self._reactive,
+            "reactive": self._reactive, "music": self._music,
         }
         fn = fns.get(self.current_effect)
         if not fn:
@@ -543,7 +567,173 @@ class EffectEngine:
             "running": self.running,
             "current_effect": self.current_effect,
             "speed": self.speed,
+            "mode": self.mode,
+            "hold_behavior": self.hold_behavior,
+            "sensitivity": self.sensitivity,
         }
+
+    # -- Music Reactive (Audio Capture & Beat Detection) -----------------------
+
+    def start_audio(self):
+        self.stop_audio()
+        self.audio_history = []
+        self.last_beat_time = 0.0
+        self.beat_timer = None
+        
+        # Set default base level for the sub-mode on start
+        base_level = self.get_music_default_level(self.mode)
+        self.ctrl.set_brightness(1 if base_level == "Level_1" else (2 if base_level == "Level_2" else 0))
+
+        def get_loopback_device():
+            try:
+                import sounddevice as sd
+                devices = sd.query_devices()
+                wasapi_info = sd.query_hostapis()
+                wasapi_idx = -1
+                for idx, api in enumerate(wasapi_info):
+                    if api['name'] == 'Windows WASAPI':
+                        wasapi_idx = idx
+                        break
+                if wasapi_idx == -1:
+                    return sd.default.device[0]
+                
+                # Check for loopback device matching current default output device
+                default_output = sd.default.device[1]
+                default_output_name = devices[default_output]['name']
+                
+                for idx, d in enumerate(devices):
+                    if d['hostapi'] == wasapi_idx and d['max_input_channels'] > 0:
+                        if 'loopback' in d['name'].lower() or default_output_name in d['name']:
+                            return idx
+                return sd.default.device[0]
+            except Exception:
+                return None
+
+        try:
+            import sounddevice as sd
+            device = get_loopback_device()
+            self.audio_stream = sd.InputStream(
+                device=device,
+                channels=1,
+                samplerate=44100,
+                blocksize=1024,
+                callback=self._audio_callback
+            )
+            self.audio_stream.start()
+            print(f"Audio stream started on device: {device}")
+        except Exception as e:
+            print(f"Failed to start loopback stream, trying default input: {e}")
+            try:
+                import sounddevice as sd
+                self.audio_stream = sd.InputStream(
+                    channels=1,
+                    samplerate=44100,
+                    blocksize=1024,
+                    callback=self._audio_callback
+                )
+                self.audio_stream.start()
+                print("Audio stream started on default input.")
+            except Exception as e2:
+                print(f"All audio input streams failed: {e2}")
+
+    def stop_audio(self):
+        if self.beat_timer:
+            self.beat_timer.cancel()
+            self.beat_timer = None
+        if self.audio_stream:
+            try:
+                self.audio_stream.stop()
+                self.audio_stream.close()
+            except Exception:
+                pass
+            self.audio_stream = None
+
+    def _audio_callback(self, indata, frames, time_info, status):
+        if not self.running or self.current_effect != "music":
+            return
+        try:
+            import numpy as np
+            audio_data = indata.flatten()
+            
+            # Use Fast Fourier Transform (FFT) to extract bass frequencies (43Hz to 215Hz)
+            # This isolates kick drums and bass drops from vocals/treble
+            fft_vals = np.abs(np.fft.rfft(audio_data))
+            bass_val = float(np.mean(fft_vals[1:6]))
+            
+            # Noise gate: ignore absolute silence or background microphone static
+            if bass_val < 0.05:
+                return
+                
+            self.audio_history.append(bass_val)
+            if len(self.audio_history) > 43:
+                self.audio_history.pop(0)
+
+            avg_bass = sum(self.audio_history) / len(self.audio_history) if self.audio_history else 0
+            
+            # If the history contains mostly silence, ignore triggering to prevent static clicks
+            if avg_bass < 0.03:
+                return
+            
+            # Sensitivity mapping
+            # Higher sensitivity = smaller threshold = triggers easily
+            # Sensitivity slider: 0.1 to 1.0 (defaults to 0.5)
+            threshold = 1.1 + (1.0 - self.sensitivity) * 1.5
+            
+            curr_time = time.time()
+            # Beat check: current bass energy exceeds average bass energy by the threshold
+            if bass_val > avg_bass * threshold and (curr_time - self.last_beat_time) > 0.15:
+                self.last_beat_time = curr_time
+                self.trigger_beat()
+        except Exception as e:
+            print(f"Audio beat callback error: {e}")
+
+    def get_music_default_level(self, sub_mode):
+        if sub_mode in (1, 4):
+            return "Level_0"
+        elif sub_mode == 2:
+            return "Level_1"
+        elif sub_mode in (3, 5):
+            return "Level_2"
+        return "Level_0"
+
+    def trigger_beat(self):
+        if self.beat_timer:
+            self.beat_timer.cancel()
+        
+        sub_mode = self.mode
+        if sub_mode == 6: # Random mix
+            sub_mode = random.randint(1, 5)
+
+        # 1. Always OFF but DIM on beat
+        if sub_mode == 1:
+            self.ctrl.set_brightness(1)
+            self.beat_timer = threading.Timer(0.12, self.reset_backlight, [0])
+        # 2. Always DIM but MAX on beat
+        elif sub_mode == 2:
+            self.ctrl.set_brightness(2)
+            self.beat_timer = threading.Timer(0.12, self.reset_backlight, [1])
+        # 3. Always BRIGHT (MAX) but DIM on beat
+        elif sub_mode == 3:
+            self.ctrl.set_brightness(1)
+            self.beat_timer = threading.Timer(0.12, self.reset_backlight, [2])
+        # 4. Always OFF but MAX on beat
+        elif sub_mode == 4:
+            self.ctrl.set_brightness(2)
+            self.beat_timer = threading.Timer(0.12, self.reset_backlight, [0])
+        # 5. Always MAX but OFF on beat
+        elif sub_mode == 5:
+            self.ctrl.set_brightness(0)
+            self.beat_timer = threading.Timer(0.12, self.reset_backlight, [2])
+
+        self.beat_timer.start()
+
+    def reset_backlight(self, level):
+        if self.running and self.current_effect == "music":
+            self.ctrl.set_brightness(level)
+
+    def _music(self):
+        # Async stream handles the logic, wait here
+        return self._wait(0.2)
 
 # ---------------------------------------------------------------------------
 #  Globals
@@ -593,6 +783,12 @@ def api_speed():
     engine.speed = max(0.1, min(float(data.get("speed", 1.0)), 5.0))
     return jsonify(speed=engine.speed)
 
+@app.route("/api/sensitivity", methods=["POST"])
+def api_sensitivity():
+    data = request.json or {}
+    engine.sensitivity = max(0.1, min(float(data.get("sensitivity", 0.5)), 1.0))
+    return jsonify(sensitivity=engine.sensitivity)
+
 @app.route("/api/toggle", methods=["POST"])
 def api_toggle():
     data = request.json or {}
@@ -601,18 +797,267 @@ def api_toggle():
     return jsonify(status="on" if on else "off")
 
 # ---------------------------------------------------------------------------
+#  System Settings & Startup (Registry / Tray Configuration)
+# ---------------------------------------------------------------------------
+
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+REG_NAME = "LOQKeyboardEffects"
+
+def set_startup(enable=True):
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_SET_VALUE)
+        if enable:
+            exe_path = sys.executable
+            if getattr(sys, 'frozen', False):
+                cmd = f'"{exe_path}" --minimized'
+            else:
+                cmd = f'"{sys.executable}" "{os.path.abspath(__file__)}" --minimized'
+            winreg.SetValueEx(key, REG_NAME, 0, winreg.REG_SZ, cmd)
+        else:
+            try:
+                winreg.DeleteValue(key, REG_NAME)
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(key)
+        return True
+    except Exception as e:
+        print(f"Failed to set startup registry: {e}")
+        return False
+
+def get_startup_status():
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_READ)
+        value, _ = winreg.QueryValueEx(key, REG_NAME)
+        winreg.CloseKey(key)
+        return True
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return False
+
+def load_settings():
+    default = {"start_at_boot": False, "minimize_to_tray": True}
+    if not os.path.exists(SETTINGS_FILE):
+        return default
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+def save_settings(s):
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(s, f, indent=4)
+    except Exception:
+        pass
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    s = load_settings()
+    s["start_at_boot"] = get_startup_status()
+    return jsonify(s)
+
+@app.route("/api/settings", methods=["POST"])
+def update_settings():
+    data = request.json or {}
+    s = load_settings()
+    
+    if "start_at_boot" in data:
+        val = bool(data["start_at_boot"])
+        s["start_at_boot"] = val
+        set_startup(val)
+        
+    if "minimize_to_tray" in data:
+        s["minimize_to_tray"] = bool(data["minimize_to_tray"])
+        
+    save_settings(s)
+    return jsonify(status="success", settings=s)
+
+# ---------------------------------------------------------------------------
 #  Shutdown Hook
 # ---------------------------------------------------------------------------
 
 import atexit
 @atexit.register
 def cleanup():
+    global tray_icon
+    try:
+        if tray_icon:
+            tray_icon.stop()
+    except Exception:
+        pass
     engine.stop()
     controller.close_ps()
 
 # ---------------------------------------------------------------------------
 #  Entry point
 # ---------------------------------------------------------------------------
+
+LOADING_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Loading...</title>
+    <style>
+        body {
+            background: #09070f;
+            color: #f3f1f8;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+        }
+        .container {
+            text-align: center;
+        }
+        .spinner {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 24px;
+        }
+        .spinner-outer {
+            box-sizing: border-box;
+            width: 100%;
+            height: 100%;
+            border: 4px solid rgba(168, 85, 247, 0.1);
+            border-radius: 50%;
+            border-left-color: #a855f7;
+            animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+        }
+        .spinner-inner {
+            box-sizing: border-box;
+            position: absolute;
+            width: 80%;
+            height: 80%;
+            top: 10%;
+            left: 10%;
+            border: 3px solid rgba(236, 72, 153, 0.05);
+            border-radius: 50%;
+            border-right-color: #ec4899;
+            animation: spin-reverse 1.5s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+        }
+        h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin: 0 0 8px;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        p {
+            font-size: 13px;
+            color: #9ca3af;
+            margin: 0;
+            font-weight: 400;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes spin-reverse {
+            0% { transform: rotate(360deg); }
+            100% { transform: rotate(0deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner">
+            <div class="spinner-outer"></div>
+            <div class="spinner-inner"></div>
+        </div>
+        <h2>LOQ Keyboard Effects Lab</h2>
+        <p>Connecting to lighting interface engine...</p>
+    </div>
+    <script>
+        function checkServer() {
+            fetch('http://127.0.0.1:5000/api/status', { mode: 'no-cors' })
+                .then(() => {
+                    window.location.href = 'http://127.0.0.1:5000';
+                })
+                .catch(() => {
+                    setTimeout(checkServer, 100);
+                });
+        }
+        setTimeout(checkServer, 100);
+    </script>
+</body>
+</html>
+"""
+
+window = None
+allow_close = False
+tray_icon = None
+
+def create_tray_image():
+    try:
+        image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+        dc = ImageDraw.Draw(image)
+        # Draw violet-edged keyboard icon
+        dc.rounded_rectangle([6, 18, 58, 46], radius=6, outline=(168, 85, 247, 255), width=3)
+        dc.rectangle([12, 24, 20, 30], fill=(168, 85, 247, 255))
+        dc.rectangle([24, 24, 40, 30], fill=(168, 85, 247, 255))
+        dc.rectangle([44, 24, 52, 30], fill=(168, 85, 247, 255))
+        dc.rectangle([12, 34, 52, 40], fill=(168, 85, 247, 255))
+        return image
+    except Exception:
+        # Fallback to white rectangle if PIL fails
+        return Image.new('RGB', (64, 64), (168, 85, 247))
+
+def show_window(icon, item):
+    global window
+    if window:
+        window.show()
+        window.restore()
+
+def exit_app(icon, item):
+    global allow_close, window
+    allow_close = True
+    icon.stop()
+    if window:
+        window.destroy()
+
+def setup_tray():
+    global tray_icon
+    try:
+        menu = pystray.Menu(
+            pystray.MenuItem("Show Dashboard", show_window, default=True),
+            pystray.MenuItem("Exit App", exit_app)
+        )
+        tray_icon = pystray.Icon(
+            name="LOQKeyboardEffects",
+            icon=create_tray_image(),
+            title="LOQ Keyboard Effects Lab",
+            menu=menu
+        )
+        tray_icon.run()
+    except Exception as e:
+        print(f"Tray error: {e}")
+
+def on_closing():
+    global allow_close, window
+    try:
+        settings = load_settings()
+        if settings.get("minimize_to_tray", True) and not allow_close:
+            if window:
+                window.hide()
+            return False
+    except Exception:
+        pass
+    return True
+
+def run_flask():
+    app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
     if not is_admin():
@@ -643,7 +1088,33 @@ if __name__ == "__main__":
     print("=" * 50)
     print(f"  Method : {method_name}")
     print(f"  URL    : http://localhost:5000")
-    print(f"  Stop   : Ctrl+C")
     print("=" * 50)
     print("")
-    app.run(host="127.0.0.1", port=5000, debug=False)
+
+    # Start Flask server in background thread
+    t = threading.Thread(target=run_flask, daemon=True)
+    t.start()
+
+    # Start System Tray icon in background thread
+    tray_thread = threading.Thread(target=setup_tray, daemon=True)
+    tray_thread.start()
+
+    # Determine if starting in minimized/silent mode (e.g. from windows boot registry)
+    hidden_start = "--minimized" in sys.argv or "--silent" in sys.argv
+
+    # Launch PyWebView desktop application window
+    import webview
+    window = webview.create_window(
+        title="Lenovo LOQ Keyboard Effects Lab",
+        html=LOADING_HTML,
+        width=850,
+        height=720,
+        resizable=True,
+        min_size=(600, 500),
+        hidden=hidden_start
+    )
+    
+    # Hook window closing event to handle tray minimize
+    window.events.closing += on_closing
+    
+    webview.start()
